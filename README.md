@@ -1,6 +1,6 @@
 # StarshipArena
 
-<img style="float: right;" src="design/icon.svg" width="256" alt="Icon"/>
+<img align="right" src="design/icon.svg" width="256" alt="Icon"/>
 
 An advanced 2d space combat arena for testing and competition. Create battle scenarios, and let humans and machines control their spacecraft in the field.
 
