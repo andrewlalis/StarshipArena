@@ -1,7 +1,9 @@
 package nl.andrewl.starship_arena.view;
 
+import nl.andrewl.starship_arena.control.CameraController;
 import nl.andrewl.starship_arena.model.Arena;
 import nl.andrewl.starship_arena.model.Camera;
+import nl.andrewl.starship_arena.model.PhysicsObject;
 
 import javax.swing.*;
 import java.awt.*;
@@ -9,15 +11,10 @@ import java.awt.geom.AffineTransform;
 
 public class ArenaPanel extends JPanel {
 	private final Arena arena;
-
 	private final ShipRenderer shipRenderer = new ShipRenderer();
 
 	public ArenaPanel(Arena arena) {
 		this.arena = arena;
-		this.addMouseWheelListener(e -> {
-			arena.getCamera().setScaleIncrement(arena.getCamera().getScaleIncrement() + e.getWheelRotation());
-			repaint();
-		});
 	}
 
 	@Override
@@ -28,37 +25,44 @@ public class ArenaPanel extends JPanel {
 		g2.fillRect(0, 0, getWidth(), getHeight());
 
 		AffineTransform originalTx = g2.getTransform();
-		AffineTransform tx = new AffineTransform();
-
-		Camera cam = arena.getCamera();
-
-		double translateX = (double) getWidth() / 2;
-		double translateY = (double) getHeight() / 2;
-		if (cam.getFocus() == null) {
-			translateX += cam.getPosition().x;
-			translateY += cam.getPosition().y;
-		}
-
-		double scale = 1 * Camera.SCALE_INTERVAL;
-		if (cam.getScaleIncrement() > 0) {
-			scale = cam.getScaleIncrement() * Camera.SCALE_INTERVAL;
-		} else if (cam.getScaleIncrement() < 0) {
-			scale = 1.0 / Math.abs(cam.getScaleIncrement() * Camera.SCALE_INTERVAL);
-		}
-
-		tx.translate(translateX, translateY);
-		tx.scale(scale, scale);
-		g2.setTransform(tx);
-
+		AffineTransform camTx = getCameraTransform();
 		for (var s : arena.getShips()) {
+			AffineTransform shipTx = new AffineTransform(camTx);
+			shipTx.translate(s.getPosition().x, s.getPosition().y);
+			shipTx.rotate(s.getRotation());
+			g2.setTransform(shipTx);
 			shipRenderer.render(s, g2);
 		}
-
 		g2.setTransform(originalTx);
 
+		// Testing indicators.
 		g2.setColor(Color.GREEN);
 		g2.fillRect(0, 0, 20, 20);
 		g2.setColor(Color.BLUE);
 		g2.fillRect(getWidth() - 20, getHeight() - 20, 20, 20);
+		g2.setColor(Color.MAGENTA);
+		g2.fillOval(getWidth() / 2 - 5, getHeight() / 2 - 5, 10, 10);
+	}
+
+	private AffineTransform getCameraTransform() {
+		AffineTransform tx = new AffineTransform();
+		Camera cam = arena.getCamera();
+		// Start by translating such that 0, 0 is in the center of the screen instead of top-left.
+		tx.translate((double) getWidth() / 2, (double) getHeight() / 2);
+		tx.scale(cam.getScaleFactor(), cam.getScaleFactor());
+
+		double rotation = -cam.getRotation();
+		double x = -cam.getPosition().x;
+		double y = -cam.getPosition().y;
+		if (cam.getFocus() != null) {
+			PhysicsObject f = cam.getFocus();
+			rotation -= f.getRotation();
+			x -= f.getPosition().x;
+			y -= f.getPosition().y;
+		}
+
+		tx.rotate(rotation);
+		tx.translate(x, y);
+		return tx;
 	}
 }

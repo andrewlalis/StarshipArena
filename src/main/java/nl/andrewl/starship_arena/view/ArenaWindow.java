@@ -1,5 +1,7 @@
 package nl.andrewl.starship_arena.view;
 
+import nl.andrewl.starship_arena.control.CameraController;
+import nl.andrewl.starship_arena.control.GameUpdater;
 import nl.andrewl.starship_arena.model.Arena;
 import nl.andrewl.starship_arena.util.ResourceUtils;
 
@@ -11,6 +13,7 @@ import java.io.InputStream;
 
 public class ArenaWindow extends JFrame {
 	private final ArenaPanel arenaPanel;
+	private final GameUpdater updater;
 
 	public ArenaWindow(Arena arena) {
 		super("Starship Arena");
@@ -33,7 +36,13 @@ public class ArenaWindow extends JFrame {
 		}
 
 		arenaPanel = new ArenaPanel(arena);
-		add(arenaPanel);
+		setContentPane(arenaPanel);
 		pack();
+
+		var camCtl = new CameraController(arena.getCamera());
+		addKeyListener(camCtl);
+		addMouseWheelListener(camCtl);
+		updater = new GameUpdater(arena, arenaPanel);
+		updater.start();
 	}
 }

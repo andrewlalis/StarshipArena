@@ -2,7 +2,7 @@ package nl.andrewl.starship_arena.model;
 
 import java.awt.geom.Point2D;
 
-public class PhysicsObject {
+public abstract class PhysicsObject {
 	/**
 	 * The position of this object in the scene, in meters from the origin.
 	 * Positive x-axis goes to the right, and positive y-axis goes down.
@@ -28,6 +28,11 @@ public class PhysicsObject {
 		return position;
 	}
 
+	public void setPosition(float x, float y) {
+		this.position.x = x;
+		this.position.y = y;
+	}
+
 	public float getRotation() {
 		return rotation;
 	}
@@ -40,6 +45,11 @@ public class PhysicsObject {
 
 	public Point2D.Float getVelocity() {
 		return velocity;
+	}
+
+	public void setVelocity(float x, float y) {
+		this.velocity.x = x;
+		this.velocity.y = y;
 	}
 
 	public float getRotationSpeed() {

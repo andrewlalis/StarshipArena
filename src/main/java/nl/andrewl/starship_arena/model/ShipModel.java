@@ -2,10 +2,7 @@ package nl.andrewl.starship_arena.model;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import nl.andrewl.starship_arena.model.ship.ComponentDeserializer;
-import nl.andrewl.starship_arena.model.ship.GeometricComponent;
-import nl.andrewl.starship_arena.model.ship.Gun;
-import nl.andrewl.starship_arena.model.ship.ShipComponent;
+import nl.andrewl.starship_arena.model.ship.*;
 
 import java.util.Collection;
 
@@ -62,6 +59,7 @@ public class ShipModel {
 	public static ShipModel load(String json) {
 		Gson gson = new GsonBuilder()
 				.registerTypeAdapter(ShipComponent.class, new ComponentDeserializer())
+				.registerTypeAdapter(Gun.class, new GunDeserializer())
 				.create();
 		ShipModel model = gson.fromJson(json, ShipModel.class);
 		model.normalizeComponents();

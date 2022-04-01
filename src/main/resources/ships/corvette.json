@@ -40,13 +40,23 @@
       "type": "gun",
       "name": "Port-Side Machine Gun",
       "mass": 500,
-      "location": {"x": 0.15, "y": 0.4}
+      "location": {"x": 0.15, "y": 0.35},
+      "rotation": 0,
+      "minRotation": -160,
+      "maxRotation": 5,
+      "barrelWidth": 0.02,
+      "barrelLength": 0.2
     },
     {
       "type": "gun",
       "name": "Starboard-Side Machine Gun",
       "mass": 500,
-      "location": {"x": 0.85, "y": 0.4}
+      "location": {"x": 0.85, "y": 0.35},
+      "rotation": 0,
+      "minRotation": -5,
+      "maxRotation": 160,
+      "barrelWidth": 0.02,
+      "barrelLength": 0.2
     }
   ]
 }
