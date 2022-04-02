@@ -1,3 +1,7 @@
 .idea/
-target/
 *.iml
+
+target/
+client/target/
+core/target/
+server/target/
