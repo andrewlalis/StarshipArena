@@ -3,12 +3,15 @@ package nl.andrewl.starship_arena.server;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import nl.andrewl.starship_arena.server.data.ArenaStore;
+import nl.andrewl.starship_arena.server.model.Arena;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.PreDestroy;
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
@@ -48,6 +51,17 @@ public class SocketGateway implements Runnable {
 		new Thread(this).start();
 	}
 
+	@PreDestroy
+	public void shutdown() {
+		try {
+			log.info("Shutting down Socket Gateway.");
+			serverSocket.close();
+			serverUdpSocket.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
 	@Override
 	public void run() {
 		try {
@@ -56,27 +70,52 @@ public class SocketGateway implements Runnable {
 			serverUdpSocket.bind(new InetSocketAddress(host, udpPort));
 			log.info("Socket Gateway bound UDP on {}:{}", host, udpPort);
 		} catch (IOException e) {
-			e.printStackTrace();
-			return;
+			throw new IllegalStateException(e); // Quit; server cannot run if these sockets can't bind.
 		}
 		while (!serverSocket.isClosed()) {
 			try {
 				Socket clientSocket = serverSocket.accept();
-				processIncomingConnection(clientSocket);
+				new Thread(() -> processIncomingConnection(clientSocket)).start();
 			} catch (IOException e) {
-				e.printStackTrace();
+				if (!e.getMessage().equalsIgnoreCase("Socket closed")) e.printStackTrace();
 			}
 		}
 	}
 
-	private void processIncomingConnection(Socket clientSocket) throws IOException {
-		var din = new DataInputStream(clientSocket.getInputStream());
-		UUID arenaId = new UUID(din.readLong(), din.readLong());
-		var oa = arenaStore.getById(arenaId);
-		if (oa.isPresent()) {
-			new ClientManager(oa.get(), clientSocket).start();
-		} else {
-			clientSocket.close();
+	/**
+	 * Logic to do to initialize a client TCP connection, which involves getting
+	 * some basic information about the connection, such as which arena the
+	 * client is connecting to. A {@link ClientManager} is then started to
+	 * handle further communication with the client.
+	 * @param clientSocket The socket to the client.
+	 */
+	private void processIncomingConnection(Socket clientSocket) {
+		try (
+				var in = new DataInputStream(clientSocket.getInputStream());
+				var out = new DataOutputStream(clientSocket.getOutputStream())
+		) {
+			UUID arenaId = new UUID(in.readLong(), in.readLong());
+			UUID clientId;
+			boolean reconnecting = in.readBoolean();
+			if (reconnecting) {
+				clientId = new UUID(in.readLong(), in.readLong());
+			} else {
+				clientId = UUID.randomUUID();
+			}
+			var oa = arenaStore.getById(arenaId);
+			if (oa.isPresent()) {
+				Arena arena = oa.get();
+				ClientManager clientManager = new ClientManager(arena, clientSocket, clientId);
+				arena.registerClient(clientManager);
+				out.writeBoolean(true);
+				clientManager.start();
+			} else {
+				out.writeBoolean(false);
+				clientSocket.close();
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
+
 	}
 }

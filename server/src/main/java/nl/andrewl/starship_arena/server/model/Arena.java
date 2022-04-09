@@ -42,11 +42,11 @@ public class Arena {
 		return currentStage;
 	}
 
-	public void registerClient(UUID id, ClientManager clientManager) {
-		if (clients.containsKey(id)) {
+	public void registerClient(ClientManager clientManager) {
+		if (clients.containsKey(clientManager.getClientId())) {
 			clientManager.shutdown();
 		} else {
-			clients.put(id, clientManager);
+			clients.put(clientManager.getClientId(), clientManager);
 		}
 	}
 
