@@ -1,11 +1,20 @@
 package nl.andrewl.starship_arena.server.model;
 
+import nl.andrewl.starship_arena.core.net.ChatSent;
 import nl.andrewl.starship_arena.server.ClientManager;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import static nl.andrewl.starship_arena.server.SocketGateway.SERIALIZER;
 
 public class Arena {
 	private final UUID id;
@@ -15,6 +24,7 @@ public class Arena {
 	private ArenaStage currentStage = ArenaStage.STAGING;
 
 	private final Map<UUID, ClientManager> clients = new ConcurrentHashMap<>();
+	private final List<ChatMessage> chatMessages = new CopyOnWriteArrayList<>();
 
 	public Arena(String name) {
 		this.id = UUID.randomUUID();
@@ -47,6 +57,22 @@ public class Arena {
 			clientManager.shutdown();
 		} else {
 			clients.put(clientManager.getClientId(), clientManager);
+		}
+	}
+
+	public void chatSent(ChatMessage chat) throws IOException {
+		chatMessages.add(chat);
+		byte[] data = SERIALIZER.writeMessage(new ChatSent(chat.clientId(), chat.timestamp(), chat.message()));
+		broadcast(data);
+	}
+
+	private void broadcast(byte[] data) {
+		for (var cm : clients.values()) {
+			try {
+				cm.send(data);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
 	}
 

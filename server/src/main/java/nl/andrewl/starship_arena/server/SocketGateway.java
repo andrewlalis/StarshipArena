@@ -2,6 +2,10 @@ package nl.andrewl.starship_arena.server;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import nl.andrewl.record_net.Message;
+import nl.andrewl.record_net.Serializer;
+import nl.andrewl.starship_arena.core.net.ClientConnectRequest;
+import nl.andrewl.starship_arena.core.net.ClientConnectResponse;
 import nl.andrewl.starship_arena.server.data.ArenaStore;
 import nl.andrewl.starship_arena.server.model.Arena;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,13 +14,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PreDestroy;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.net.DatagramSocket;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.net.*;
 import java.util.UUID;
 
 /**
@@ -27,6 +26,13 @@ import java.util.UUID;
 @Service
 @Slf4j
 public class SocketGateway implements Runnable {
+	public static final int INITIALIZATION_TIMEOUT = 1000;
+	public static final Serializer SERIALIZER = new Serializer();
+	static {
+		SERIALIZER.registerType(1, ClientConnectRequest.class);
+		SERIALIZER.registerType(2, ClientConnectResponse.class);
+	}
+
 	private final ServerSocket serverSocket;
 	private final DatagramSocket serverUdpSocket;
 	private final ArenaStore arenaStore;
@@ -90,28 +96,32 @@ public class SocketGateway implements Runnable {
 	 * @param clientSocket The socket to the client.
 	 */
 	private void processIncomingConnection(Socket clientSocket) {
-		try (
-				var in = new DataInputStream(clientSocket.getInputStream());
-				var out = new DataOutputStream(clientSocket.getOutputStream())
-		) {
-			UUID arenaId = new UUID(in.readLong(), in.readLong());
-			UUID clientId;
-			boolean reconnecting = in.readBoolean();
-			if (reconnecting) {
-				clientId = new UUID(in.readLong(), in.readLong());
-			} else {
-				clientId = UUID.randomUUID();
+		try {
+			clientSocket.setSoTimeout(INITIALIZATION_TIMEOUT); // Set limited timeout so new connections don't waste resources.
+			Message msg = SERIALIZER.readMessage(clientSocket.getInputStream());
+			if (msg instanceof ClientConnectRequest cm) {
+				UUID arenaId = cm.arenaId();
+				UUID clientId = cm.clientId();
+				if (clientId == null) clientId = UUID.randomUUID();
+				var oa = arenaStore.getById(arenaId);
+				if (oa.isPresent()) {
+					Arena arena = oa.get();
+					ClientManager clientManager = new ClientManager(arena, clientSocket, clientId);
+					arena.registerClient(clientManager);
+					SERIALIZER.writeMessage(new ClientConnectResponse(true, clientId));
+					clientSocket.setSoTimeout(0); // Reset timeout to infinity after successful initialization.
+					clientManager.start();
+					return;
+				}
 			}
-			var oa = arenaStore.getById(arenaId);
-			if (oa.isPresent()) {
-				Arena arena = oa.get();
-				ClientManager clientManager = new ClientManager(arena, clientSocket, clientId);
-				arena.registerClient(clientManager);
-				out.writeBoolean(true);
-				clientManager.start();
-			} else {
-				out.writeBoolean(false);
+			// If the connection wasn't valid, return a no-success response.
+			SERIALIZER.writeMessage(new ClientConnectResponse(false, null));
+			clientSocket.close();
+		} catch (SocketTimeoutException e) {
+			try {
 				clientSocket.close();
+			} catch (IOException ex) {
+				throw new RuntimeException(ex);
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
