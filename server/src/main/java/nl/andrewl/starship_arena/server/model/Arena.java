@@ -73,6 +73,10 @@ public class Arena {
 		this.closesAt = battleEndsAt.plus(1, ChronoUnit.MINUTES);
 	}
 
+	public boolean isActive() {
+		return currentStage != ArenaStage.PRE_STAGING && currentStage != ArenaStage.CLOSED;
+	}
+
 	private void close() {
 		for (var client : clients.values()) {
 			client.getNetManager().shutdown();

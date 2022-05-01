@@ -6,6 +6,7 @@ import nl.andrewl.starship_arena.server.api.dto.ArenaResponse;
 import nl.andrewl.starship_arena.server.control.ArenaUpdater;
 import nl.andrewl.starship_arena.server.model.Arena;
 import nl.andrewl.starship_arena.server.model.ArenaStage;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -25,10 +26,14 @@ import java.util.concurrent.TimeUnit;
 @EnableScheduling
 @Slf4j
 public class ArenaStore {
+	@Value("${starship-arena.max-arenas : 100}")
+	private int maxArenas;
+
 	private final Map<UUID, Arena> arenas = new ConcurrentHashMap<>();
 
 	public List<ArenaResponse> getArenas() {
 		return arenas.values().stream()
+				.filter(Arena::isActive)
 				.sorted(Comparator.comparing(Arena::getCreatedAt))
 				.map(ArenaResponse::new)
 				.toList();
@@ -38,25 +43,30 @@ public class ArenaStore {
 		return Optional.ofNullable(arenas.get(id));
 	}
 
+	private Arena getOrThrow(String id) {
+		try {
+			UUID uuid = UUID.fromString(id);
+			Arena arena = arenas.get(uuid);
+			if (arena == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Arena with id \"" + id + "\" not found.");
+			return arena;
+		} catch (IllegalArgumentException e) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Malformed id. Should be a UUID.");
+		}
+	}
+
 	public ArenaResponse registerArena(ArenaCreationPayload payload) {
+		if (arenas.size() >= maxArenas) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Too many arenas.");
 		Arena arena = new Arena(payload.name());
 		this.arenas.put(arena.getId(), arena);
 		return new ArenaResponse(arena);
 	}
 
 	public ArenaResponse getArena(String arenaId) {
-		try {
-			Arena arena = arenas.get(UUID.fromString(arenaId));
-			if (arena == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-			return new ArenaResponse(arena);
-		} catch (IllegalArgumentException e) {
-			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid arena id.");
-		}
+		return new ArenaResponse(getOrThrow(arenaId));
 	}
 
 	public void startArena(String arenaId) {
-		Arena arena = arenas.get(UUID.fromString(arenaId));
-		if (arena == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+		Arena arena = getOrThrow(arenaId);
 		if (arena.getCurrentStage() != ArenaStage.PRE_STAGING) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Arena is already started.");
 		}
@@ -67,10 +77,12 @@ public class ArenaStore {
 	public void cleanArenas() {
 		Set<UUID> removalSet = new HashSet<>();
 		final Instant cutoff = Instant.now().minus(5, ChronoUnit.MINUTES);
+		final Instant hardCutoff = Instant.now().minus(1, ChronoUnit.HOURS);
 		for (var arena : arenas.values()) {
 			if (
 					(arena.getCurrentStage() == ArenaStage.CLOSED) ||
-					(arena.getCurrentStage() == ArenaStage.PRE_STAGING && arena.getCreatedAt().isBefore(cutoff))
+					(arena.getCurrentStage() == ArenaStage.PRE_STAGING && arena.getCreatedAt().isBefore(cutoff)) ||
+					(arena.getCreatedAt().isBefore(hardCutoff))
 			) {
 				removalSet.add(arena.getId());
 			}

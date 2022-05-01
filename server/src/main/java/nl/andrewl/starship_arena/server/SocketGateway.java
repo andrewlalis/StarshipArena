@@ -29,7 +29,9 @@ import java.util.concurrent.Executors;
 @Service
 @Slf4j
 public class SocketGateway implements Runnable {
-	public static final int INITIALIZATION_TIMEOUT = 1000;
+	/**
+	 * The serializer that's used for communication between arenas and clients.
+	 */
 	public static final Serializer SERIALIZER = new Serializer();
 	static {
 		SERIALIZER.registerType(1, ClientConnectRequest.class);
@@ -50,6 +52,8 @@ public class SocketGateway implements Runnable {
 	private short tcpPort;
 	@Value("${starship-arena.gateway.udp-port}") @Getter
 	private short udpPort;
+	@Value("${starship-arena.gateway.init-timeout-ms}")
+	private int initTimeout;
 
 	public SocketGateway(ArenaStore arenaStore) throws IOException {
 		this.serverSocket = new ServerSocket();
@@ -104,7 +108,7 @@ public class SocketGateway implements Runnable {
 	 */
 	private void processIncomingConnection(Socket clientSocket) {
 		try {
-			clientSocket.setSoTimeout(INITIALIZATION_TIMEOUT); // Set limited timeout so new connections don't waste resources.
+			clientSocket.setSoTimeout(initTimeout); // Set limited timeout so new connections don't waste resources.
 			Message msg = SERIALIZER.readMessage(clientSocket.getInputStream());
 			if (msg instanceof ClientConnectRequest cm) {
 				UUID arenaId = cm.arenaId();
