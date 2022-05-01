@@ -28,4 +28,9 @@ public class ArenasController {
 	public ArenaResponse createArena(@RequestBody ArenaCreationPayload payload) {
 		return arenaStore.registerArena(payload);
 	}
+
+	@PostMapping(path = "/{arenaId}/start")
+	public void startArena(@PathVariable String arenaId) {
+		arenaStore.startArena(arenaId);
+	}
 }

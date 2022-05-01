@@ -4,10 +4,11 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import nl.andrewl.record_net.Message;
 import nl.andrewl.record_net.Serializer;
-import nl.andrewl.starship_arena.core.net.ClientConnectRequest;
-import nl.andrewl.starship_arena.core.net.ClientConnectResponse;
+import nl.andrewl.starship_arena.core.net.*;
+import nl.andrewl.starship_arena.server.control.ClientNetManager;
 import nl.andrewl.starship_arena.server.data.ArenaStore;
 import nl.andrewl.starship_arena.server.model.Arena;
+import nl.andrewl.starship_arena.server.model.Client;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -17,6 +18,8 @@ import javax.annotation.PreDestroy;
 import java.io.IOException;
 import java.net.*;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * The socket gateway is the central point at which all clients connect for any
@@ -31,11 +34,15 @@ public class SocketGateway implements Runnable {
 	static {
 		SERIALIZER.registerType(1, ClientConnectRequest.class);
 		SERIALIZER.registerType(2, ClientConnectResponse.class);
+		SERIALIZER.registerType(3, ChatSend.class);
+		SERIALIZER.registerType(4, ChatSent.class);
+		SERIALIZER.registerType(5, ArenaStatus.class);
 	}
 
 	private final ServerSocket serverSocket;
 	private final DatagramSocket serverUdpSocket;
 	private final ArenaStore arenaStore;
+	private final ExecutorService connectionProcessingExecutor = Executors.newSingleThreadExecutor();
 
 	@Value("${starship-arena.gateway.host}") @Getter
 	private String host;
@@ -81,7 +88,7 @@ public class SocketGateway implements Runnable {
 		while (!serverSocket.isClosed()) {
 			try {
 				Socket clientSocket = serverSocket.accept();
-				new Thread(() -> processIncomingConnection(clientSocket)).start();
+				connectionProcessingExecutor.submit(() -> processIncomingConnection(clientSocket));
 			} catch (IOException e) {
 				if (!e.getMessage().equalsIgnoreCase("Socket closed")) e.printStackTrace();
 			}
@@ -91,7 +98,7 @@ public class SocketGateway implements Runnable {
 	/**
 	 * Logic to do to initialize a client TCP connection, which involves getting
 	 * some basic information about the connection, such as which arena the
-	 * client is connecting to. A {@link ClientManager} is then started to
+	 * client is connecting to. A {@link ClientNetManager} is then started to
 	 * handle further communication with the client.
 	 * @param clientSocket The socket to the client.
 	 */
@@ -106,16 +113,16 @@ public class SocketGateway implements Runnable {
 				var oa = arenaStore.getById(arenaId);
 				if (oa.isPresent()) {
 					Arena arena = oa.get();
-					ClientManager clientManager = new ClientManager(arena, clientSocket, clientId);
-					arena.registerClient(clientManager);
-					SERIALIZER.writeMessage(new ClientConnectResponse(true, clientId));
+					Client client = new Client(clientId, arena, clientSocket);
+					arena.registerClient(client);
+					SERIALIZER.writeMessage(new ClientConnectResponse(true, clientId), clientSocket.getOutputStream());
 					clientSocket.setSoTimeout(0); // Reset timeout to infinity after successful initialization.
-					clientManager.start();
+					new Thread(client.getNetManager()).start();
 					return;
 				}
 			}
 			// If the connection wasn't valid, return a no-success response.
-			SERIALIZER.writeMessage(new ClientConnectResponse(false, null));
+			SERIALIZER.writeMessage(new ClientConnectResponse(false, null), clientSocket.getOutputStream());
 			clientSocket.close();
 		} catch (SocketTimeoutException e) {
 			try {

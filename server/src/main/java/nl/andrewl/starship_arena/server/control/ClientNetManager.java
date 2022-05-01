@@ -1,38 +1,32 @@
-package nl.andrewl.starship_arena.server;
+package nl.andrewl.starship_arena.server.control;
 
-import lombok.Getter;
 import nl.andrewl.record_net.Message;
 import nl.andrewl.starship_arena.core.net.ChatSend;
-import nl.andrewl.starship_arena.server.model.Arena;
-import nl.andrewl.starship_arena.server.model.ChatMessage;
+import nl.andrewl.starship_arena.core.net.ChatSent;
+import nl.andrewl.starship_arena.server.model.Client;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.Socket;
-import java.util.UUID;
 
 import static nl.andrewl.starship_arena.server.SocketGateway.SERIALIZER;
 
-public class ClientManager extends Thread {
-	@Getter
-	private final UUID clientId;
-	@Getter
-	private String clientUsername;
-	private final Arena arena;
+/**
+ * A runnable that manages sending and receiving from a client application.
+ */
+public class ClientNetManager implements Runnable {
+	private final Client client;
 
 	private final Socket clientSocket;
 	private final InputStream in;
 	private final OutputStream out;
-	private final DataInputStream dIn;
-	private final DataOutputStream dOut;
 
-	public ClientManager(Arena arena, Socket clientSocket, UUID id) throws IOException {
-		this.arena = arena;
+	public ClientNetManager(Client client, Socket clientSocket) throws IOException {
+		this.client = client;
 		this.clientSocket = clientSocket;
-		this.clientId = id;
 		this.in = clientSocket.getInputStream();
 		this.out = clientSocket.getOutputStream();
-		this.dIn = new DataInputStream(clientSocket.getInputStream());
-		this.dOut = new DataOutputStream(clientSocket.getOutputStream());
 	}
 
 	public void send(byte[] data) throws IOException {
@@ -56,7 +50,7 @@ public class ClientManager extends Thread {
 			try {
 				Message msg = SERIALIZER.readMessage(in);
 				if (msg instanceof ChatSend cs) {
-					arena.chatSent(new ChatMessage(clientId, System.currentTimeMillis(), cs.msg()));
+					client.getArena().getNetManager().broadcast(new ChatSent(client.getId(), System.currentTimeMillis(), cs.msg()));
 				}
 			} catch (IOException e) {
 				e.printStackTrace();

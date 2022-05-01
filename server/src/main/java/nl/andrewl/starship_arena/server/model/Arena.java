@@ -1,34 +1,45 @@
 package nl.andrewl.starship_arena.server.model;
 
-import nl.andrewl.starship_arena.core.net.ChatSent;
-import nl.andrewl.starship_arena.server.ClientManager;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import nl.andrewl.starship_arena.core.net.ArenaStatus;
+import nl.andrewl.starship_arena.server.control.ArenaNetManager;
+import nl.andrewl.starship_arena.server.control.ArenaUpdater;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.List;
+import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 
-import static nl.andrewl.starship_arena.server.SocketGateway.SERIALIZER;
-
+@Getter
+@Slf4j
 public class Arena {
 	private final UUID id;
-	private final Instant createdAt;
 	private final String name;
 
-	private ArenaStage currentStage = ArenaStage.STAGING;
+	private final Instant createdAt;
 
-	private final Map<UUID, ClientManager> clients = new ConcurrentHashMap<>();
-	private final List<ChatMessage> chatMessages = new CopyOnWriteArrayList<>();
+	private Instant startedAt;
+	private Instant battleStartsAt;
+	private Instant battleEndsAt;
+	private Instant closesAt;
+
+	private ArenaStage currentStage = ArenaStage.PRE_STAGING;
+
+	private final Map<UUID, Client> clients = new ConcurrentHashMap<>();
+
+	private final ArenaNetManager netManager;
+	@Setter
+	private ArenaUpdater updater;
 
 	public Arena(String name) {
 		this.id = UUID.randomUUID();
 		this.createdAt = Instant.now();
+		this.netManager = new ArenaNetManager(this);
 		this.name = name;
 	}
 
@@ -36,45 +47,47 @@ public class Arena {
 		this("Unnamed Arena");
 	}
 
-	public UUID getId() {
-		return id;
+	public Set<Client> getClients() {
+		return new HashSet<>(clients.values());
 	}
 
-	public Instant getCreatedAt() {
-		return createdAt;
+	public void advanceStage() {
+		if (currentStage == ArenaStage.PRE_STAGING) {
+			start();
+			currentStage = ArenaStage.STAGING;
+		} else if (currentStage == ArenaStage.STAGING) {
+			currentStage = ArenaStage.BATTLE;
+		} else if (currentStage == ArenaStage.BATTLE) {
+			currentStage = ArenaStage.ANALYSIS;
+		} else if (currentStage == ArenaStage.ANALYSIS) {
+			close();
+			currentStage = ArenaStage.CLOSED;
+		}
+		netManager.broadcast(new ArenaStatus(currentStage.name()));
 	}
 
-	public String getName() {
-		return name;
+	private void start() {
+		this.startedAt = Instant.now();
+		this.battleStartsAt = startedAt.plus(1, ChronoUnit.MINUTES);
+		this.battleEndsAt = battleStartsAt.plus(2, ChronoUnit.MINUTES);
+		this.closesAt = battleEndsAt.plus(1, ChronoUnit.MINUTES);
 	}
 
-	public ArenaStage getCurrentStage() {
-		return currentStage;
+	private void close() {
+		for (var client : clients.values()) {
+			client.getNetManager().shutdown();
+		}
 	}
 
-	public void registerClient(ClientManager clientManager) {
-		if (clients.containsKey(clientManager.getClientId())) {
-			clientManager.shutdown();
+	public void registerClient(Client client) {
+		if (clients.containsKey(client.getId())) {
+			client.getNetManager().shutdown();
 		} else {
-			clients.put(clientManager.getClientId(), clientManager);
+			clients.put(client.getId(), client);
 		}
 	}
 
-	public void chatSent(ChatMessage chat) throws IOException {
-		chatMessages.add(chat);
-		byte[] data = SERIALIZER.writeMessage(new ChatSent(chat.clientId(), chat.timestamp(), chat.message()));
-		broadcast(data);
-	}
 
-	private void broadcast(byte[] data) {
-		for (var cm : clients.values()) {
-			try {
-				cm.send(data);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-		}
-	}
 
 	@Override
 	public boolean equals(Object o) {
